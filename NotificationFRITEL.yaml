@@ -1,0 +1,104 @@
+blueprint:
+  name: Frigate - Notification Telegram par Horodatage
+  description: Télécharge un segment vidéo de l'événement de la durée spécifiée et envoie une notification sur Telegram. La vidéo est automatiquement supprimée de HA une minute après l'envoi.
+  domain: automation
+  source_url: https://gist.github.com/titovskiy/8aa161eefb36c71782de33eb03cf1c65
+  input:
+    camera:
+      name: Caméra Frigate
+      description: Nom de la caméra, tel que défini dans la configuration de Frigate.
+    chat_id:
+      name: ID du chat/bot Telegram
+    baseUrl:
+      name: URL de base
+      description: "Lien externe pour l'envoi d'une capture d'écran depuis Frigate. Exemple : https://ha.domain.com"
+    frigate_ip:
+      name: IP de Frigate
+      description: Adresse IP de Frigate pour la requête API
+    frigate_port:
+      name: Port de Frigate
+      description: Port utilisé par Frigate pour l'API (si différent du standard)
+      default: 5000
+    video_duration_sec:
+      name: Durée de la vidéo, en secondes
+      description: Durée du segment vidéo demandé via l'API
+      default: 20
+    video_duration_shift_sec:
+      name: Décalage de la vidéo, en secondes
+      description: "Décalage de la vidéo par rapport à l'événement. Important ! Ne doit pas être supérieur ou égal à la durée de la vidéo"
+      default: 10
+    send_photo:
+      name: Envoi de photo
+      default: true
+      selector:
+        boolean: {}
+    send_video:
+      name: Envoi de vidéo
+      default: true
+      selector:
+        boolean: {}
+mode: single
+max_exceeded: silent
+trigger:
+  - platform: mqtt
+    topic: frigate/events
+    value_template: "{{ value_json['after']['camera'] }}"
+    payload: !input camera
+condition:
+  - condition: template
+    value_template: "{{ type != 'end' }}"
+action:
+  - parallel:
+      - service: telegram_bot.send_message
+        data:
+          title: Objet détecté ! Zone - {{ camera }}
+          message: "ID de l'événement : {{ id }} | <a href=\"{{ snapshot }}\">capture</a>"
+          target: "{{ chat_id }}"
+          disable_web_page_preview: true
+          parse_mode: html
+      - if:
+          - condition: template
+            value_template: "{{ send_photo }}"
+        then:
+          - service: telegram_bot.send_photo
+            data:
+              url: "{{ snapshot }}"
+              target: "{{ chat_id }}"
+      - if:
+          - condition: template
+            value_template: "{{ send_video }}"
+        then:
+              - delay:
+                  hours: 0
+                  minutes: 0
+                  seconds: "{{ (10 + video_duration_shift_sec) | int }}"
+                  milliseconds: 0
+              - service: telegram_bot.send_video
+                data:
+                  url: "{{ video }}"
+                  caption: >-
+                    Vidéo de {{ camera }} des {{ video_duration_sec }} dernières secondes
+                  target: "{{ chat_id }}"
+  - service: persistent_notification.create
+    data:
+      message: "URL Snapshot générée: {{ snapshot }}"
+      title: "Debug Snapshot URL"
+
+variables:
+  camera: !input camera
+  send_photo: !input send_photo
+  send_video: !input send_video
+  frigate_ip: !input frigate_ip
+  frigate_port: !input frigate_port
+  chat_id: !input chat_id
+  baseUrl: !input baseUrl
+  video_duration_sec: !input video_duration_sec
+  video_duration_shift_sec: !input video_duration_shift_sec
+  start_timestamp: >-
+    {{ (as_timestamp(now()) + video_duration_shift_sec - video_duration_sec) | int }}
+  end_timestamp: "{{ (as_timestamp(now()) + video_duration_shift_sec) | int }}"
+  id: "{{ trigger.payload_json['after']['id'] }}"
+  video: >-
+    http://{{ frigate_ip }}:{{ frigate_port }}/api/{{ camera }}/start/{{ start_timestamp }}/end/{{ end_timestamp }}/clip.mp4
+  snapshot: "{{ baseUrl }}/api/frigate/notifications/{{ id }}/snapshot.jpg"
+  snapshot_debug: "http://{{ frigate_ip }}:{{ frigate_port }}/api/{{ camera }}/snapshot/{{ id }}"
