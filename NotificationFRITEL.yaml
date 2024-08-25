@@ -2,7 +2,7 @@ blueprint:
   name: Frigate - Notification Telegram par Horodatage
   description: Télécharge un segment vidéo de l'événement de la durée spécifiée et envoie une notification sur Telegram. La vidéo est automatiquement supprimée de HA une minute après l'envoi.
   domain: automation
-  source_url: https://gist.github.com/titovskiy/8aa161eefb36c71782de33eb03cf1c65
+  source_url: https://github.com/Dev38440/Home-Assistant/blob/main/NotificationFRITEL.yaml
   input:
     camera:
       name: Caméra Frigate
